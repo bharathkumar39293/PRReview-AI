@@ -1,79 +1,145 @@
 # PRReview AI
 
-**A read-only TypeScript CLI that reviews committed Git diffs using Google Gemini and validates AI-generated findings against actual changed lines.**
+**A read-only, Gemini-powered code review CLI that validates AI-generated findings against actual Git changes.**
 
-PRReview AI analyzes changes between two Git commits, asks an LLM to identify potential issues, and checks whether each reported finding refers to an eligible changed file and an added line.
+PRReview AI analyzes committed Git diffs to identify potential bugs and security issues before a pull request is opened.
 
-It is designed to make AI-assisted code review more constrained and verifiable—not to replace human review or claim that every finding is a confirmed bug.
+It combines Google Gemini's code analysis capabilities with deterministic local validation to ensure that reported findings reference eligible changed files and valid added-line locations.
+
+The goal is simple: make AI-assisted code reviews more constrained, transparent, and verifiable.
+
+**Built with:** TypeScript · Node.js · Google Gemini · Zod · Git
+
+---
 
 ## Why PRReview AI?
 
-AI-generated code reviews can produce problems of their own:
+AI-generated code reviews introduce their own reliability problems:
 
 - Findings that reference files that were never changed.
-- Line numbers that do not exist in the diff.
+- Line numbers that do not exist in the submitted diff.
 - Speculative issues with little actionable value.
-- Accidental exposure of sensitive files.
-- Unclear errors when an LLM request fails.
+- Accidental exposure of sensitive repository files.
+- Unclear behavior when an AI provider returns malformed or unexpected responses.
 
-PRReview AI addresses some of these problems by separating AI analysis from local validation.
+PRReview AI addresses these problems by separating AI analysis from deterministic local validation.
+
+The model suggests potential issues. The application validates their structure and locations. Developers decide whether the findings represent actual bugs.
 
 ## How it works
 
 ```text
-Git repository
-      |
-      v
-Extract committed diff
-      |
-      v
-Classify changed files
-      |
-      +---- Sensitive / binary / unsafe files
-      |              |
-      |              v
-      |         Excluded
-      |
-      v
-Check diff and AI input limits
-      |
-      v
-Explicit upload approval
-      |
-      v
-Google Gemini analysis
-      |
-      v
-Structured JSON response
-      |
-      v
-Zod schema validation
-      |
-      v
-File and added-line validation
-      |
-      v
-Markdown / JSON report
+         Git Repository
+                |
+                v
+       Extract Committed Diff
+                |
+                v
+        Classify Changed Files
+                |
+          +-----+------+
+          |            |
+          v            v
+      Eligible      Excluded
+       Files      Sensitive / Binary
+          |
+          v
+    Enforce Input Limits
+          |
+          v
+   Explicit Upload Approval
+          |
+          v
+     Google Gemini API
+          |
+          v
+    Structured AI Response
+          |
+          v
+      Zod Validation
+          |
+          v
+  Independent Finding Checks
+          |
+          v
+    Markdown / JSON Report
 ```
 
 ## Features
 
-- **Committed-diff review:** Compare two Git commit references.
-- **Gemini integration:** Analyze eligible code changes using Google Gemini.
-- **Structured output:** Request JSON findings and validate them locally with Zod.
-- **Finding validation:** Reject findings that reference unknown files, unsafe paths, or lines outside added-line ranges.
-- **Sensitive-file filtering:** Exclude files identified by filename-based sensitivity rules.
-- **Binary-file exclusion:** Do not send binary file contents to the model.
-- **Explicit upload approval:** No Gemini request is made unless `--allow-upload` is supplied.
-- **Configurable limits:** Enforce Git diff and AI input size limits before making a request.
-- **Multiple report formats:** Generate Markdown or JSON reports.
-- **Read-only operation:** Do not modify the target repository or execute its scripts.
+### AI-powered code review
+- Analyze committed Git changes using Google Gemini.
+- Identify potential bugs, security vulnerabilities, and other code quality issues.
+- Return structured findings with severity, category, description, suggested fix, and confidence.
+
+### Independent finding validation
+- Validate reported file paths against eligible changed files.
+- Reject absolute paths, unsafe paths, and path traversal attempts.
+- Verify that referenced files are not excluded as sensitive or binary.
+- Check that finding line numbers fall within added-line ranges.
+- Count rejected findings separately.
+
+### Upload and repository safety
+- Explicit `--allow-upload` approval before sending eligible code changes to Gemini.
+- Sensitive-file filtering based on filename heuristics.
+- Binary-file exclusion.
+- Configurable Git diff and AI input limits.
+- No modification of the target repository.
+- No execution of target repository scripts.
+- Git commands use fixed argument arrays rather than shell command construction.
+- Gemini receives no tool or function-calling access.
+
+### Reporting
+- Markdown and JSON report formats.
+- Findings grouped by severity.
+- Repository and commit references.
+- Changed-file statistics.
+- Model information and review status.
+- Rejected-finding counts.
+- Explicit disclaimer that AI findings are hypotheses.
+
+## Evaluation
+
+PRReview AI has undergone an initial live evaluation using Google Gemini against a controlled synthetic Git repository.
+
+The evaluation contained five deliberately introduced defects and two clean control files.
+
+### Initial live evaluation results
+
+| Metric | Result |
+|---|---:|
+| Model | Gemini 2.5 Flash |
+| Changed files | 7 |
+| Added lines | 43 |
+| Planted defects identified | 5 / 5 |
+| Clean control files incorrectly flagged | 0 |
+| Rejected findings | 0 |
+
+### Issues identified
+
+1. **SQL injection:** Unsafe SQL query construction using interpolated input.
+2. **Broken access control:** Missing invoice ownership authorization.
+3. **Pagination logic:** Incorrect offset calculation for one-based pagination.
+4. **Reservation logic:** Exact-stock reservations incorrectly rejected.
+5. **Monetary calculation:** Premature rounding during currency conversion.
+
+Gemini identified all five planted defects and did not report findings in either clean control file.
+
+### Evaluation limitations
+
+This is an initial controlled smoke test, not a representative benchmark of real-world code review accuracy.
+
+The fixture contains deliberately introduced defects with relatively explicit behavioral requirements. Its results should not be interpreted as production precision, recall, or a guarantee of detection performance.
+
+The evaluation does not establish that suggested fixes compile, pass tests, or resolve every underlying issue.
+
+All AI-generated findings require human review.
 
 ## Requirements
 
-- Node.js 22 or later
-- Git installed and available on your `PATH`
-- A Google Gemini API key for AI-powered reviews
+- Node.js 22 or later.
+- Git installed and available on your PATH.
+- Google Gemini API key for AI-powered reviews.
 
 ## Getting started
 
@@ -81,6 +147,7 @@ Markdown / JSON report
 
 ```bash
 git clone https://github.com/bharathkumar39293/PRReview-AI.git
+
 cd PRReview-AI
 ```
 
@@ -90,14 +157,21 @@ cd PRReview-AI
 npm ci
 ```
 
-### 3. Build and run tests
+### 3. Build the project
 
 ```bash
 npm run build
+```
+
+### 4. Run automated tests
+
+```bash
 npm test
 ```
 
-The automated test suite uses mocked AI responses and temporary Git repositories. It does not require a Gemini API key or make live API requests.
+The automated test suite uses mocked AI responses and temporary Git repositories.
+
+A Gemini API key is not required to run the automated tests, and the test suite does not make live API requests.
 
 ## Configure Gemini
 
@@ -108,23 +182,28 @@ GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+Get your API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
-Use your own API key. Never commit it or share it in logs, screenshots, or public issues.
+**Security notes:**
+- Use your own API key.
+- Never commit your `.env` file.
+- Never expose API keys in logs, screenshots, or public issues.
 
-The CLI loads configuration from its current working directory—not from the target repository passed through `--repo`.
+The CLI loads configuration from its current working directory, not from the target repository passed through `--repo`.
 
 ## Usage
 
-### Review without uploading code
+### 1. Review without uploading code
 
 ```bash
 npm run dev -- review --repo /path/to/repository --base main
 ```
 
-This produces a local metadata report. It does not initialize the Gemini client or send repository content to the API.
+This produces a local metadata report.
 
-### Run an AI-powered review
+It does not initialize the Gemini client or send repository content to the API.
+
+### 2. Run an AI-powered review
 
 ```bash
 npm run dev -- review --repo /path/to/repository --base main --head HEAD --allow-upload
@@ -132,13 +211,13 @@ npm run dev -- review --repo /path/to/repository --base main --head HEAD --allow
 
 The `--allow-upload` flag explicitly approves sending eligible diff content to Google Gemini for that invocation.
 
-### Generate JSON output
+### 3. Generate JSON output
 
 ```bash
 npm run dev -- review --repo /path/to/repository --base main --head HEAD --format json --allow-upload
 ```
 
-### Available options
+### Available CLI options
 
 | Option | Description |
 |---|---|
@@ -152,17 +231,17 @@ npm run dev -- review --repo /path/to/repository --base main --head HEAD --forma
 
 Gemini is instructed to return structured findings containing:
 
-- File path
-- Line number
-- Severity: critical, high, medium, or low
-- Category: bug, security, performance, error handling, or missing test
-- Title and description
-- Suggested fix
-- Confidence level
+- File path.
+- Line number.
+- Severity: critical, high, medium, or low.
+- Category: bug, security, performance, error handling, or missing test.
+- Title and description.
+- Suggested fix.
+- Confidence level.
 
-PRReview AI does not trust these references automatically.
+PRReview AI does not automatically trust these references.
 
-Each finding is independently checked to ensure that:
+Each finding is independently checked to ensure:
 
 1. Its file exists in the eligible changed-file set.
 2. Its path is not absolute, unsafe, or a traversal path.
@@ -171,22 +250,27 @@ Each finding is independently checked to ensure that:
 
 Invalid findings are rejected and counted in the report.
 
-These checks validate the location and structure of a finding. They do **not** prove that the reported issue is a real bug.
+**Important:** These checks validate the structure and location of a finding. They do not prove that the reported issue is a real bug.
 
 ## Safety and privacy
 
-PRReview AI is designed to avoid unnecessary repository exposure.
+PRReview AI is designed to minimize unnecessary repository exposure.
 
-- Without `--allow-upload`, no Gemini API request is made.
-- With approval, only eligible text patches are sent to Google Gemini.
-- Sensitive paths, binary files, unsafe paths, and files without eligible patches are excluded.
-- Full source patches are not included in generated reports.
-- The target repository is not modified.
-- Repository scripts are not executed.
-- Git operations use fixed argument arrays rather than shell command construction.
-- Gemini is not given tool or function-calling access.
+| Protection | Behavior |
+|---|---|
+| Upload approval | No Gemini request without `--allow-upload`. |
+| Sensitive files | Excluded using filename-based sensitivity rules. |
+| Binary files | Binary contents are not sent to Gemini. |
+| Unsafe paths | Rejected during validation. |
+| Input limits | Oversized diffs and AI inputs fail before the request. |
+| Repository modification | The target repository is not modified. |
+| Script execution | Target repository scripts are not executed. |
+| Git execution | Uses fixed argument arrays rather than shell command construction. |
+| Model permissions | Gemini is not given tool or function-calling access. |
 
-**Important limitations:**
+With explicit approval, only eligible text patches are sent to Google Gemini.
+
+### Important privacy considerations
 
 - Sensitive-file detection relies on filename-based heuristics. It cannot reliably detect secrets embedded inside ordinary source files.
 - Review the commit range and eligible changes before approving an upload.
@@ -195,7 +279,7 @@ PRReview AI is designed to avoid unnecessary repository exposure.
 
 ## Limits and failure handling
 
-PRReview AI applies configurable limits to Git diff output and serialized AI input.
+PRReview AI enforces configurable limits on Git diff output and serialized AI input.
 
 | Setting | Default |
 |---|---:|
@@ -206,24 +290,26 @@ PRReview AI applies configurable limits to Git diff output and serialized AI inp
 
 Limits must be positive integers and cannot exceed 100 MB.
 
-Oversized inputs fail before the request is made. The tool does not silently truncate the diff or retry indefinitely.
+Oversized inputs fail before the request is made. The application does not silently truncate the diff or retry indefinitely.
 
-Provider errors, response-parsing failures, blocked output, and invalid structured responses are handled as distinct failure cases where possible. Diagnostic output is sanitized to avoid exposing credentials and raw request content.
+Provider errors, response-parsing failures, blocked output, and invalid structured responses are handled as distinct failure cases where possible.
+
+Diagnostic output is sanitized to avoid exposing credentials and raw request content.
 
 ## Reports
 
-Reports include:
+Generated reports include:
 
-- Repository and commit references
-- Changed-file statistics
-- AI model used, when applicable
-- Review summary
-- Findings grouped by severity
-- Suggested fixes and confidence levels
-- Rejected-finding count
-- A disclaimer that findings are AI-generated hypotheses
+- Repository and commit references.
+- Changed-file statistics.
+- AI model used, when applicable.
+- Review summary.
+- Findings grouped by severity.
+- Suggested fixes and confidence levels.
+- Rejected-finding count.
+- A disclaimer that findings are AI-generated hypotheses.
 
-The report also states that tests were not executed by the review.
+Reports also explicitly state that tests were not executed by the review.
 
 ## Current limitations
 
@@ -238,40 +324,59 @@ PRReview AI currently:
 
 An empty findings list does not mean the reviewed code is bug-free.
 
+PRReview AI is an assistive review tool, not a replacement for human code review, automated testing, or security analysis.
+
 ## Testing
 
-Run the automated suite:
+Run the automated test suite:
 
 ```bash
 npm test
 ```
 
-The tests cover Git diff extraction, sensitive and binary file handling, upload approval, mocked Gemini responses, structured-output validation, invalid paths and line references, and report generation.
+Tests cover:
+
+- Git diff extraction.
+- Sensitive and binary file handling.
+- Upload approval.
+- Mocked Gemini responses.
+- Structured-output validation.
+- Invalid paths and line references.
+- Report generation.
 
 Automated tests do not establish live provider availability or real-world review accuracy. Those require separate live API and controlled evaluation runs.
 
 ## Project structure
 
 ```text
-src/
-  ai/          Gemini client and analysis
-  git/         Git diff extraction
-  review/      Review orchestration and validation
-  reports/     Markdown and JSON report generation
-  cli/         Command-line interface
-
-tests/         Automated tests
-examples/      Example review material
+PRReview-AI/
+│
+├── src/
+│   ├── ai/          # Gemini client and analysis
+│   ├── git/         # Git diff extraction
+│   ├── review/      # Review orchestration and validation
+│   ├── reports/     # Markdown and JSON report generation
+│   └── cli/         # Command-line interface
+│
+├── tests/           # Automated tests
+├── examples/        # Example review material
+│
+├── .env.example
+├── .gitignore
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+└── README.md
 ```
 
 ## Design principle
 
-**Let the model suggest. Let deterministic code validate. Let humans decide.**
+> Let the model suggest. Let deterministic code validate. Let humans decide.
 
 PRReview AI uses an LLM to identify potential issues while keeping file eligibility, line-reference checks, upload approval, and report generation under local programmatic control.
 
 ---
 
-Built with TypeScript, Node.js, Google Gemini, Zod, and Git.
+**Repository:** [github.com/bharathkumar39293/PRReview-AI](https://github.com/bharathkumar39293/PRReview-AI)
 
-**Repository:** https://github.com/bharathkumar39293/PRReview-AI
+**Technology:** TypeScript · Node.js · Google Gemini · Zod · Git
